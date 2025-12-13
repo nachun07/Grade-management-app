@@ -14,6 +14,7 @@ import {
 import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { useRouter } from "next/navigation";
 
+// Chart.js関連のインポート
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -91,6 +92,7 @@ export default function Dashboard() {
         return; // userがnullの場合は処理をスキップ
     }
 
+    // Firestoreのデータパス: grades/{user.uid}/data を使用
     const ref = query(
       collection(db, "grades", user.uid, "data"), 
       orderBy("createdAt", "asc")
@@ -103,13 +105,21 @@ export default function Dashboard() {
       );
       setGrades(list);
     }, 
-    (error) => {
-      // Missing or insufficient permissions. エラー対応
+    (error: any) => { 
+      // Firestore Snapshot Error: Missing or insufficient permissions. の場合の処理
       console.error("Firestore Snapshot Error:", error);
+      
+      // ログアウト時や権限不足時に、データをクリアし、コンソールエラーを抑制
       setGrades([]); 
+      
+      // ログアウト時のパーミッションエラーは、onAuthStateChangedによるリダイレクトを待つ
+      if (error.code === 'permission-denied' && !user) {
+          console.warn("ログアウト中のクリーンアップエラーを抑制しました:", error.message);
+          return; 
+      }
     });
 
-    // ⭐ ログアウト対策: ユーザー状態が変更されるときにリスナーを確実に停止
+    // ログアウト対策: ユーザー状態が変更されるときにリスナーを確実に停止
     return () => unsub();
   }, [user]);
 
@@ -128,11 +138,12 @@ export default function Dashboard() {
     if (!user) return;
 
     try {
+      // データパス: grades/{user.uid}/data に追加
       await addDoc(collection(db, "grades", user.uid, "data"), {
         test,
         subject,
         term,
-        score: Number(score),
+        score: +score, // 数値型への確実な変換
         createdAt: new Date(),
       });
 
@@ -153,6 +164,7 @@ export default function Dashboard() {
     if (!window.confirm("本当に削除しますか？")) return;
 
     try {
+      // データパス: grades/{user.uid}/data から削除
       await deleteDoc(doc(db, "grades", user.uid, "data", id));
     } catch (err) {
       console.error(err);
@@ -235,7 +247,16 @@ export default function Dashboard() {
   if (loading) {
     return (
       <div style={styles.loadingContainer}>
-        <div style={styles.spinner}></div>
+        {/* CSSアニメーションをインラインで定義 */}
+        <style dangerouslySetInnerHTML={{__html: `
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+          `}} />
+        <div 
+          style={{...styles.spinner, animation: 'spin 1s linear infinite'}}
+        ></div>
         <p>読み込み中...</p>
       </div>
     );
@@ -347,7 +368,7 @@ export default function Dashboard() {
   );
 }
 
-// ✅ スタイル定義 (省略せず再掲)
+// スタイル定義
 const styles: any = {
   container: {
     minHeight: "100vh",

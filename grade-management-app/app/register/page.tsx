@@ -8,7 +8,7 @@ import {
 import { doc, setDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 
-// スタイル定義 (省略せず再掲)
+// スタイル定義 (再掲)
 const styles: any = {
   container: {
     minHeight: "100vh",
@@ -60,11 +60,55 @@ const styles: any = {
   },
 };
 
+// 🛠️ ヘルパー関数の定義
+const CURRENT_YEAR = new Date().getFullYear();
+const generateYears = () => {
+  const years = [];
+  for (let i = CURRENT_YEAR; i >= CURRENT_YEAR - 100; i--) {
+    years.push(i);
+  }
+  return years;
+};
+const generateMonths = () => {
+  const months = [];
+  for (let i = 1; i <= 12; i++) {
+    months.push(i.toString().padStart(2, '0'));
+  }
+  return months;
+};
+const generateDays = (year: string, month: string) => {
+    const daysInMonth = (y: number, m: number) => {
+        if (m === 2) {
+            return (y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0)) ? 29 : 28;
+        } else if ([4, 6, 9, 11].includes(m)) {
+            return 30;
+        } else {
+            return 31;
+        }
+    };
+    const maxDay = daysInMonth(parseInt(year) || CURRENT_YEAR, parseInt(month) || 1);
+    const days = [];
+    for (let i = 1; i <= maxDay; i++) {
+        days.push(i.toString().padStart(2, '0'));
+    }
+    return days;
+};
+const YEARS = generateYears();
+const MONTHS = generateMonths();
+// ------------------------------
+
+const GENDERS = ['男性', '女性', 'その他']; // 性別オプション
+
 export default function RegisterPage() {
   const router = useRouter();
 
-  const [username, setUsername] = useState("");
+  const [username, setUsername] = useState(""); 
   const [password, setPassword] = useState("");
+  // ⭐ 生年月日を3つのステートに分割
+  const [birthYear, setBirthYear] = useState("");  
+  const [birthMonth, setBirthMonth] = useState("");
+  const [birthDay, setBirthDay] = useState("");
+  const [gender, setGender] = useState("");     
   const [loading, setLoading] = useState(false);
 
   // ✅ 共通関数: ユニークなメールアドレスを生成
@@ -72,10 +116,11 @@ export default function RegisterPage() {
     return `u${Date.now()}${Math.random().toString(36).substring(2, 8)}@scoreapp.local`;
   };
 
-  // ✅ ユーザー名とパスワードで新規登録
+  // ✅ ユーザー名と追加情報で新規登録
   const handleRegister = async () => {
-    if (!username || !password) {
-      alert("ユーザー名とパスワードを入力してください");
+    // ⭐ バリデーションチェックを3つのステートに合わせる
+    if (!username || !password || !birthYear || !birthMonth || !birthDay || !gender) {
+      alert("すべての情報を入力してください");
       return;
     }
 
@@ -85,18 +130,20 @@ export default function RegisterPage() {
     }
 
     const internalEmail = generateUniqueEmail(); 
+    // ⭐ Firestoreに保存する形式 (YYYY-MM-DD) に結合
+    const birthdayString = `${birthYear}-${birthMonth}-${birthDay}`;
 
     try {
       setLoading(true);
       
-      // 1. Firebase Authで登録
       const userCredential = await createUserWithEmailAndPassword(auth, internalEmail, password);
       const uid = userCredential.user.uid;
 
-      // 2. Firestoreにユーザー名とUIDのマッピングを保存
       await setDoc(doc(db, "user_profiles", uid), {
           name: username,         
           email: internalEmail,   
+          birthday: birthdayString, // ⭐ 結合した文字列を保存
+          gender: gender,         
           createdAt: new Date(),
       });
 
@@ -116,7 +163,7 @@ export default function RegisterPage() {
 
         <input
           style={styles.input}
-          placeholder="ユーザー名 (重複可)" 
+          placeholder="ユーザー名 (表示名・重複可)" 
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           disabled={loading}
@@ -130,6 +177,57 @@ export default function RegisterPage() {
           onChange={(e) => setPassword(e.target.value)}
           disabled={loading}
         />
+        
+        {/* ⭐ 生年月日選択フォーム */}
+        <div style={{display: 'flex', gap: 8, marginBottom: 12}}>
+            {/* 年 */}
+            <select 
+              style={{...styles.input, flex: 1}} 
+              value={birthYear} 
+              onChange={(e) => setBirthYear(e.target.value)}
+              disabled={loading}
+            >
+                <option value="">年</option>
+                {YEARS.map(y => <option key={y} value={y}>{y}年</option>)}
+            </select>
+            
+            {/* 月 */}
+            <select 
+              style={{...styles.input, flex: 1}} 
+              value={birthMonth} 
+              onChange={(e) => setBirthMonth(e.target.value)}
+              disabled={loading}
+            >
+                <option value="">月</option>
+                {MONTHS.map(m => <option key={m} value={m}>{parseInt(m)}月</option>)}
+            </select>
+
+            {/* 日 (年と月が選択されている場合にのみ正しく生成) */}
+            <select 
+              style={{...styles.input, flex: 1}} 
+              value={birthDay} 
+              onChange={(e) => setBirthDay(e.target.value)}
+              disabled={loading}
+            >
+                <option value="">日</option>
+                {/* 年と月が選択されている場合にのみ日のオプションを生成 */}
+                {(birthYear && birthMonth ? generateDays(birthYear, birthMonth) : generateDays("2000", "01"))
+                 .map(d => <option key={d} value={d}>{parseInt(d)}日</option>)}
+            </select>
+        </div>
+
+
+        {/* ⭐ 性別選択 */}
+        <select 
+          style={styles.input} 
+          value={gender} 
+          onChange={(e) => setGender(e.target.value)}
+          disabled={loading}
+        >
+            <option value="">性別を選択</option>
+            {GENDERS.map(g => <option key={g} value={g}>{g}</option>)}
+        </select>
+
 
         <button
           style={{...styles.button, opacity: loading ? 0.7 : 1}}
